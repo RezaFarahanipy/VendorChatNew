@@ -16,7 +16,23 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.13"
-      - run: gradle assembleDebug --no-daemon --stacktrace
+      - name: Build
+        shell: bash
+        run: gradle assembleDebug --no-daemon --stacktrace 2>&1 | tee build.log
+      - name: Save error summary to branch build-log
+        if: failure()
+        shell: bash
+        run: |
+          grep -E "^e: |error:|What went wrong|FAILURE|Execution failed|Caused by" -A3 build.log | head -200 > /tmp/ERRORS.txt || true
+          echo "commit: ${GITHUB_SHA}" >> /tmp/ERRORS.txt
+          git config user.name "ci"
+          git config user.email "ci@users.noreply.github.com"
+          git checkout --orphan build-log
+          git rm -rf . > /dev/null 2>&1 || true
+          cp /tmp/ERRORS.txt ERRORS.txt
+          git add ERRORS.txt
+          git commit -m "build errors for ${GITHUB_SHA::7}"
+          git push -f origin build-log
       - uses: actions/upload-artifact@v4
         with:
           name: app-debug
