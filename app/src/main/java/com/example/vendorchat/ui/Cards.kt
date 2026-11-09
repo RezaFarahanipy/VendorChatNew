@@ -25,13 +25,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SuggestionChip
@@ -48,6 +50,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -63,25 +66,26 @@ private val order = listOf(
     "کالا", "شناسه ملی", "شماره ثبت", "کد اقتصادی", "بانک", "شماره حساب", "شبا", "توضیحات"
 )
 
-private fun emojiFor(k: String): String = when (k) {
-    "تلفن" -> "📞"
-    "موبایل" -> "📱"
-    "ایمیل" -> "✉️"
-    "آدرس" -> "📍"
-    "شهر" -> "🏙️"
-    "استان" -> "🗺️"
-    "کد پستی" -> "📮"
-    "شناسه ملی" -> "🆔"
-    "شماره ثبت" -> "🧾"
-    "کد اقتصادی" -> "🏷️"
-    "وبسایت" -> "🌐"
-    "مسئول" -> "👤"
-    "سمت" -> "💼"
-    "کالا" -> "📦"
-    "بانک" -> "🏦"
-    "شماره حساب", "شبا" -> "💳"
-    "توضیحات" -> "📝"
-    else -> "🔹"
+/** آیکن و رنگ هر نوع اطلاعات */
+private fun iconFor(k: String): Pair<ImageVector, Color> = when (k) {
+    "تلفن" -> Ic.Call to Color(0xFF16A34A)
+    "موبایل" -> Ic.Smartphone to Color(0xFF0D9488)
+    "ایمیل" -> Ic.Mail to Color(0xFF2563EB)
+    "وبسایت" -> Ic.Language to Color(0xFF0891B2)
+    "آدرس" -> Ic.LocationOn to Color(0xFFEA580C)
+    "شهر" -> Ic.LocationCity to Color(0xFFF97316)
+    "استان" -> Ic.Map to Color(0xFFF97316)
+    "کد پستی" -> Ic.MarkunreadMailbox to Color(0xFFDB2777)
+    "مسئول" -> Ic.Person to Color(0xFF7C3AED)
+    "سمت" -> Ic.Work to Color(0xFF6D28D9)
+    "کالا" -> Ic.Inventory2 to Color(0xFFD97706)
+    "شناسه ملی" -> Ic.Badge to Color(0xFF4F46E5)
+    "شماره ثبت" -> Ic.ReceiptLong to Color(0xFF4F46E5)
+    "کد اقتصادی" -> Ic.Sell to Color(0xFF4F46E5)
+    "بانک" -> Ic.AccountBalance to Color(0xFF0F766E)
+    "شماره حساب", "شبا" -> Ic.CreditCard to Color(0xFF0F766E)
+    "توضیحات" -> Ic.Notes to Color(0xFF64748B)
+    else -> Ic.Info to Color(0xFF3B5BDB)
 }
 
 private fun copyText(ctx: Context, text: String) {
@@ -107,15 +111,23 @@ private fun openValue(ctx: Context, key: String, value: String) {
 }
 
 @Composable
-fun Avatar(
-    letter: String,
-    size: Dp,
-    brush: Brush = Pal.BrandDiag,
-    textColor: Color = Color.White,
-    fontSize: TextUnit = 18.sp
-) {
+fun GlyphIcon(icon: ImageVector, tint: Color, size: Dp = 20.dp) {
+    Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(size))
+}
+
+/** دایرهٔ رنگی کم‌رنگ با آیکن داخلش */
+@Composable
+fun IconChip(icon: ImageVector, tint: Color, box: Dp = 38.dp, glyph: Dp = 20.dp) {
+    Box(
+        Modifier.size(box).clip(CircleShape).background(tint.copy(alpha = 0.14f)),
+        contentAlignment = Alignment.Center
+    ) { GlyphIcon(icon, tint, glyph) }
+}
+
+@Composable
+fun Avatar(letter: String, size: Dp, brush: Brush = Pal.BrandDiag, fontSize: TextUnit = 18.sp) {
     Box(Modifier.size(size).clip(CircleShape).background(brush), contentAlignment = Alignment.Center) {
-        Text(letter, color = textColor, fontWeight = FontWeight.Bold, fontSize = fontSize)
+        Text(letter, color = Color.White, fontWeight = FontWeight.Bold, fontSize = fontSize)
     }
 }
 
@@ -133,18 +145,19 @@ fun VendorCard(v: VendorData, onEdit: () -> Unit, onDelete: () -> Unit) {
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
 
     Card(
-        shape = RoundedCornerShape(22.dp),
+        shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Box(Modifier.fillMaxWidth().background(Pal.Brand).padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Avatar(
-                    v.name.trim().take(1), 46.dp,
-                    brush = Brush.linearGradient(listOf(Color(0x33FFFFFF), Color(0x33FFFFFF))),
-                    fontSize = 20.sp
-                )
+        Box(Modifier.fillMaxWidth().background(Pal.avatar(v.name)).padding(horizontal = 16.dp, vertical = 18.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Box(
+                    Modifier.size(52.dp).clip(CircleShape).background(Color(0x33FFFFFF)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(v.name.trim().take(1), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 22.sp)
+                }
                 Column(Modifier.weight(1f)) {
                     Text(
                         v.name, color = Color.White,
@@ -155,11 +168,12 @@ fun VendorCard(v: VendorData, onEdit: () -> Unit, onDelete: () -> Unit) {
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
+                Icon(Ic.Storefront, contentDescription = null, tint = Color(0x66FFFFFF), modifier = Modifier.size(34.dp))
             }
         }
         Column(
-            Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             if (groups.isEmpty()) {
                 Text(
@@ -168,11 +182,9 @@ fun VendorCard(v: VendorData, onEdit: () -> Unit, onDelete: () -> Unit) {
                 )
             }
             groups.forEach { (k, list) ->
+                val (icon, tint) = iconFor(k)
                 Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Box(
-                        Modifier.size(36.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
-                        contentAlignment = Alignment.Center
-                    ) { Text(emojiFor(k), fontSize = 16.sp) }
+                    IconChip(icon, tint)
                     Column(Modifier.weight(1f)) {
                         Text(k, style = MaterialTheme.typography.bodySmall, color = muted)
                         list.forEach { a ->
@@ -187,11 +199,9 @@ fun VendorCard(v: VendorData, onEdit: () -> Unit, onDelete: () -> Unit) {
                                     fontWeight = FontWeight.Medium
                                 )
                                 if (visible) {
-                                    Text(
-                                        "📋",
-                                        modifier = Modifier.clickable { copyText(ctx, a.value) }.padding(8.dp),
-                                        fontSize = 14.sp
-                                    )
+                                    Box(
+                                        Modifier.clip(CircleShape).clickable { copyText(ctx, a.value) }.padding(8.dp)
+                                    ) { GlyphIcon(Ic.ContentCopy, muted, 16.dp) }
                                 }
                             }
                         }
@@ -200,20 +210,30 @@ fun VendorCard(v: VendorData, onEdit: () -> Unit, onDelete: () -> Unit) {
             }
             if (hasSecret) {
                 TextButton(onClick = { reveal = !reveal }) {
-                    Text(if (reveal) "🙈 پنهان کردن اطلاعات بانکی" else "👁 نمایش اطلاعات بانکی")
+                    GlyphIcon(if (reveal) Ic.VisibilityOff else Ic.Visibility, MaterialTheme.colorScheme.primary, 18.dp)
+                    Spacer(Modifier.width(6.dp))
+                    Text(if (reveal) "پنهان کردن اطلاعات بانکی" else "نمایش اطلاعات بانکی")
                 }
             }
         }
-        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f))
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            TextButton(onClick = onEdit) { Text("✏️ ویرایش") }
+            TextButton(onClick = onEdit) {
+                GlyphIcon(Ic.Edit, MaterialTheme.colorScheme.primary, 18.dp)
+                Spacer(Modifier.width(6.dp))
+                Text("ویرایش")
+            }
             TextButton(
                 onClick = onDelete,
                 colors = ButtonDefaults.textButtonColors(contentColor = Pal.Danger)
-            ) { Text("🗑️ حذف") }
+            ) {
+                GlyphIcon(Ic.Delete, Pal.Danger, 18.dp)
+                Spacer(Modifier.width(6.dp))
+                Text("حذف")
+            }
         }
     }
 }
@@ -221,10 +241,17 @@ fun VendorCard(v: VendorData, onEdit: () -> Unit, onDelete: () -> Unit) {
 @Composable
 fun ActionCard(m: Msg.Action, enabled: Boolean, onConfirm: () -> Unit, onCancel: () -> Unit) {
     val accent = if (m.kind == "delete") Pal.Danger else MaterialTheme.colorScheme.primary
+    val icon = when (m.kind) {
+        "delete" -> Ic.Delete
+        "add" -> Ic.AddCircle
+        "import" -> Ic.UploadFile
+        "restore" -> Ic.SettingsBackupRestore
+        else -> Ic.Edit
+    }
     Card(
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
         border = BorderStroke(1.dp, accent.copy(alpha = 0.35f)),
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -233,14 +260,7 @@ fun ActionCard(m: Msg.Action, enabled: Boolean, onConfirm: () -> Unit, onCancel:
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text(
-                when (m.kind) {
-                    "delete" -> "🗑️"
-                    "add" -> "➕"
-                    else -> "✏️"
-                },
-                fontSize = 20.sp
-            )
+            IconChip(icon, accent, box = 36.dp, glyph = 20.dp)
             Text(
                 m.title, fontWeight = FontWeight.Bold, color = accent,
                 style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f)
@@ -260,14 +280,30 @@ fun ActionCard(m: Msg.Action, enabled: Boolean, onConfirm: () -> Unit, onCancel:
                         onClick = onConfirm, enabled = enabled,
                         colors = ButtonDefaults.buttonColors(containerColor = accent),
                         shape = RoundedCornerShape(14.dp), modifier = Modifier.weight(1f)
-                    ) { Text("تأیید") }
+                    ) {
+                        GlyphIcon(Ic.CheckCircle, Color.White, 18.dp)
+                        Spacer(Modifier.width(6.dp))
+                        Text("تأیید")
+                    }
                     OutlinedButton(
                         onClick = onCancel, enabled = enabled,
                         shape = RoundedCornerShape(14.dp), modifier = Modifier.weight(1f)
-                    ) { Text("لغو") }
+                    ) {
+                        GlyphIcon(Ic.Close, MaterialTheme.colorScheme.onSurface, 18.dp)
+                        Spacer(Modifier.width(6.dp))
+                        Text("لغو")
+                    }
                 }
-                1 -> Text("✅ انجام شد", color = Pal.Ok, fontWeight = FontWeight.Bold)
-                else -> Text("✖ لغو شد", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                1 -> Row(verticalAlignment = Alignment.CenterVertically) {
+                    GlyphIcon(Ic.CheckCircle, Pal.Ok, 18.dp)
+                    Spacer(Modifier.width(6.dp))
+                    Text("انجام شد", color = Pal.Ok, fontWeight = FontWeight.Bold)
+                }
+                else -> Row(verticalAlignment = Alignment.CenterVertically) {
+                    GlyphIcon(Ic.Cancel, MaterialTheme.colorScheme.onSurfaceVariant, 18.dp)
+                    Spacer(Modifier.width(6.dp))
+                    Text("لغو شد", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         }
     }
@@ -277,13 +313,16 @@ fun ActionCard(m: Msg.Action, enabled: Boolean, onConfirm: () -> Unit, onCancel:
 @Composable
 fun NameChips(title: String, names: List<String>, onPick: (String) -> Unit) {
     Card(
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                IconChip(Ic.FormatListBulleted, MaterialTheme.colorScheme.primary, box = 34.dp, glyph = 18.dp)
+                Text(title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+            }
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)

@@ -95,11 +95,13 @@ class Db(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, "vendorchat_v2
         return id
     }
 
-    fun setFields(id: Long, fields: Map<String, String>) {
+    fun setFields(id: Long, fields: Map<String, String>) = setFieldList(id, fields.toList())
+
+    fun setFieldList(id: Long, list: List<Pair<String, String>>) {
         val db = writableDatabase
         db.beginTransaction()
         try {
-            for ((k, v) in fields) {
+            for ((k, v) in list) {
                 val secret = Keys.isSecret(k)
                 if (k in Keys.MULTI) {
                     if (hasValue(db, id, k, v)) continue
@@ -120,6 +122,8 @@ class Db(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, "vendorchat_v2
             db.endTransaction()
         }
     }
+
+    fun all(): List<VendorData> = names().mapNotNull { get(it.id) }
 
     fun removeFields(id: Long, keys: List<String>): Int {
         val db = writableDatabase

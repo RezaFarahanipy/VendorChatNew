@@ -1,8 +1,7 @@
 package com.example.vendorchat.ui
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,22 +19,15 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
@@ -50,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -61,7 +54,7 @@ import com.example.vendorchat.chat.Msg
 @Composable
 fun ChatScreen(vm: ChatViewModel) {
     var input by rememberSaveable { mutableStateOf("") }
-    var showModel by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val msgs = vm.messages
     val lastLen = (msgs.lastOrNull() as? Msg.Text)?.text?.length ?: 0
@@ -71,8 +64,8 @@ fun ChatScreen(vm: ChatViewModel) {
     }
 
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        Header(vm, onModel = { showModel = true }, onClear = { vm.clearChat() })
-        Banner(vm, onModel = { showModel = true })
+        Header(vm, onSettings = { showSettings = true }, onClear = { vm.clearChat() })
+        Banner(vm, onModel = { showSettings = true })
 
         LazyColumn(
             state = listState,
@@ -85,7 +78,8 @@ fun ChatScreen(vm: ChatViewModel) {
                     Welcome(
                         onList = { vm.send("لیست وندورها") },
                         onAdd = { input = "وندور ... رو اضافه کن، تلفن ... شهر ..." },
-                        onAsk = { input = "اطلاعات " }
+                        onAsk = { input = "اطلاعات " },
+                        onTools = { showSettings = true }
                     )
                 }
             }
@@ -121,28 +115,28 @@ fun ChatScreen(vm: ChatViewModel) {
         )
     }
 
-    if (showModel) ModelDialog(vm) { showModel = false }
+    if (showSettings) SettingsSheet(vm) { showSettings = false }
 }
 
 @Composable
-private fun Header(vm: ChatViewModel, onModel: () -> Unit, onClear: () -> Unit) {
+private fun Header(vm: ChatViewModel, onSettings: () -> Unit, onClear: () -> Unit) {
     val (statusText, dot) = when (vm.modelState) {
-        ModelState.READY -> "آماده برای گفتگو" to Pal.Ok
+        ModelState.READY -> "آماده برای گفتگو" to Color(0xFF4ADE80)
         ModelState.LOADING -> "در حال بارگذاری مدل..." to Pal.Amber
-        ModelState.ERROR -> "خطا در مدل" to Pal.Danger
-        ModelState.NONE -> "مدل اضافه نشده" to Color(0xFF9CA3AF)
+        ModelState.ERROR -> "خطا در مدل" to Color(0xFFFF8A8F)
+        ModelState.NONE -> "مدل اضافه نشده" to Color(0xFFCBD5E1)
     }
     Row(
         Modifier.fillMaxWidth()
-            .background(Pal.Brand, RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp))
+            .background(Pal.Brand, RoundedCornerShape(bottomStart = 30.dp, bottomEnd = 30.dp))
             .statusBarsPadding()
-            .padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 18.dp),
+            .padding(start = 16.dp, end = 6.dp, top = 12.dp, bottom = 20.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
-            Modifier.size(46.dp).clip(CircleShape).background(Color(0x33FFFFFF)),
+            Modifier.size(48.dp).clip(CircleShape).background(Color(0x33FFFFFF)),
             contentAlignment = Alignment.Center
-        ) { Text("🤖", fontSize = 24.sp) }
+        ) { GlyphIcon(Ic.SmartToy, Color.White, 28.dp) }
         Spacer(Modifier.size(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
@@ -152,12 +146,17 @@ private fun Header(vm: ChatViewModel, onModel: () -> Unit, onClear: () -> Unit) 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(8.dp).clip(CircleShape).background(dot))
                 Spacer(Modifier.size(6.dp))
-                Text(statusText, color = Color(0xCCFFFFFF), style = MaterialTheme.typography.bodySmall)
+                Text(statusText, color = Color(0xDDFFFFFF), style = MaterialTheme.typography.bodySmall)
             }
         }
-        IconButton(onClick = onModel) { Text("⚙️", fontSize = 20.sp) }
         IconButton(onClick = onClear, enabled = !vm.busy && vm.messages.isNotEmpty()) {
-            Text("🗑️", fontSize = 20.sp)
+            Icon(
+                Ic.Delete, contentDescription = "پاک کردن گفتگو",
+                tint = Color.White.copy(alpha = if (!vm.busy && vm.messages.isNotEmpty()) 1f else 0.4f)
+            )
+        }
+        IconButton(onClick = onSettings) {
+            Icon(Ic.Settings, contentDescription = "تنظیمات", tint = Color.White)
         }
     }
 }
@@ -166,17 +165,20 @@ private fun Header(vm: ChatViewModel, onModel: () -> Unit, onClear: () -> Unit) 
 private fun Banner(vm: ChatViewModel, onModel: () -> Unit) {
     val (text, color) = when (vm.modelState) {
         ModelState.NONE -> "مدل زبانی اضافه نشده؛ بدون آن ثبت و گفتگوی هوشمند ممکن نیست. برای افزودن بزن." to Pal.Amber
-        ModelState.ERROR -> (vm.error ?: "خطا در مدل") + " (برای تنظیمات بزن)" to Pal.Danger
+        ModelState.ERROR -> ((vm.error ?: "خطا در مدل") + " (برای تنظیمات بزن)") to Pal.Danger
         ModelState.LOADING -> return
         ModelState.READY -> return
     }
-    Box(
-        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
-            .clip(RoundedCornerShape(14.dp))
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp)
+            .clip(RoundedCornerShape(16.dp))
             .background(color.copy(alpha = 0.14f))
             .clickable { onModel() }
-            .padding(12.dp)
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        GlyphIcon(Ic.Warning, color, 22.dp)
         Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
     }
 }
@@ -186,7 +188,7 @@ private fun UserBubble(text: String) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
         Box(
             Modifier.widthIn(max = 300.dp)
-                .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomEnd = 20.dp, bottomStart = 6.dp))
+                .clip(RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp, bottomEnd = 22.dp, bottomStart = 6.dp))
                 .background(Pal.BrandDiag)
                 .padding(horizontal = 14.dp, vertical = 10.dp)
         ) {
@@ -199,6 +201,7 @@ private fun UserBubble(text: String) {
 
 @Composable
 private fun BotBubble(text: String) {
+    val shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp, bottomStart = 22.dp, bottomEnd = 6.dp)
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.End,
@@ -206,8 +209,9 @@ private fun BotBubble(text: String) {
     ) {
         Box(
             Modifier.widthIn(max = 300.dp)
-                .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 20.dp, bottomEnd = 6.dp))
+                .clip(shape)
                 .background(MaterialTheme.colorScheme.surface)
+                .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.7f), shape)
                 .padding(horizontal = 14.dp, vertical = 10.dp)
         ) {
             if (text.isEmpty()) {
@@ -219,23 +223,26 @@ private fun BotBubble(text: String) {
             }
         }
         Spacer(Modifier.size(8.dp))
-        Avatar("V", 30.dp, brush = Pal.TealGrad, fontSize = 14.sp)
+        Box(
+            Modifier.size(32.dp).clip(CircleShape).background(Pal.Mint),
+            contentAlignment = Alignment.Center
+        ) { GlyphIcon(Ic.AutoAwesome, Color.White, 18.dp) }
     }
 }
 
 @Composable
-private fun Welcome(onList: () -> Unit, onAdd: () -> Unit, onAsk: () -> Unit) {
+private fun Welcome(onList: () -> Unit, onAdd: () -> Unit, onAsk: () -> Unit, onTools: () -> Unit) {
     Column(
-        Modifier.fillMaxWidth().padding(top = 24.dp),
+        Modifier.fillMaxWidth().padding(top = 20.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Box(
-            Modifier.size(84.dp).clip(CircleShape).background(Pal.BrandDiag),
+            Modifier.size(92.dp).clip(CircleShape).background(Pal.Brand),
             contentAlignment = Alignment.Center
-        ) { Text("🤖", fontSize = 40.sp) }
+        ) { GlyphIcon(Ic.SmartToy, Color.White, 52.dp) }
         Text(
-            "سلام! من دستیار وندورم 👋",
+            "سلام! من دستیار وندورم",
             style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold
         )
         Text(
@@ -244,16 +251,17 @@ private fun Welcome(onList: () -> Unit, onAdd: () -> Unit, onAsk: () -> Unit) {
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(Modifier.height(8.dp))
-        SuggestionRow("📋", "لیست وندورها", "همهٔ وندورهای ثبت‌شده", onList)
-        SuggestionRow("➕", "افزودن وندور جدید", "مثلاً: وندور فولاد اصفهان رو اضافه کن، تلفن ...", onAdd)
-        SuggestionRow("🔎", "دیدن اطلاعات یک وندور", "مثلاً: اطلاعات فولاد اصفهان", onAsk)
+        SuggestionRow(Ic.FormatListBulleted, Color(0xFF3B5BDB), "لیست وندورها", "همهٔ وندورهای ثبت‌شده", onList)
+        SuggestionRow(Ic.AddCircle, Color(0xFF16A34A), "افزودن وندور جدید", "مثلاً: وندور فولاد اصفهان رو اضافه کن، تلفن ...", onAdd)
+        SuggestionRow(Ic.PersonSearch, Color(0xFFEA580C), "دیدن اطلاعات یک وندور", "مثلاً: اطلاعات فولاد اصفهان", onAsk)
+        SuggestionRow(Ic.UploadFile, Color(0xFF7C3AED), "ورود از اکسل و پشتیبان‌گیری", "داده‌ها را وارد کن یا نسخهٔ پشتیبان بگیر", onTools)
     }
 }
 
 @Composable
-private fun SuggestionRow(emoji: String, title: String, subtitle: String, onClick: () -> Unit) {
+private fun SuggestionRow(icon: ImageVector, tint: Color, title: String, subtitle: String, onClick: () -> Unit) {
     Card(
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         modifier = Modifier.fillMaxWidth().clickable { onClick() }
@@ -263,10 +271,7 @@ private fun SuggestionRow(emoji: String, title: String, subtitle: String, onClic
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Box(
-                Modifier.size(42.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center
-            ) { Text(emoji, fontSize = 20.sp) }
+            IconChip(icon, tint, box = 44.dp, glyph = 24.dp)
             Column(Modifier.weight(1f)) {
                 Text(title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge)
                 Text(
@@ -295,7 +300,7 @@ private fun InputBar(value: String, onChange: (String) -> Unit, busy: Boolean, o
             enabled = !busy,
             placeholder = { Text(if (busy) "در حال پردازش..." else "پیام بنویس...") },
             maxLines = 4,
-            shape = RoundedCornerShape(24.dp),
+            shape = RoundedCornerShape(26.dp),
             colors = TextFieldDefaults.colors(
                 focusedIndicatorColor = Color.Transparent,
                 unfocusedIndicatorColor = Color.Transparent,
@@ -307,58 +312,13 @@ private fun InputBar(value: String, onChange: (String) -> Unit, busy: Boolean, o
             modifier = Modifier.weight(1f)
         )
         Box(
-            Modifier.size(50.dp).clip(CircleShape)
-                .background(if (canSend) Pal.BrandDiag else Brush.linearGradient(listOf(Color(0xFFB8BBD0), Color(0xFFB8BBD0))))
+            Modifier.size(52.dp).clip(CircleShape)
+                .background(
+                    if (canSend) Pal.BrandDiag
+                    else Brush.linearGradient(listOf(Color(0xFFB4BBD0), Color(0xFFB4BBD0)))
+                )
                 .clickable(enabled = canSend) { onSend() },
             contentAlignment = Alignment.Center
-        ) { Text("↑", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold) }
+        ) { GlyphIcon(Ic.ArrowUpward, Color.White, 26.dp) }
     }
-}
-
-@Composable
-private fun ModelDialog(vm: ChatViewModel, onClose: () -> Unit) {
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) vm.importModel(uri)
-    }
-    val progress = vm.importProgress
-    AlertDialog(
-        onDismissRequest = onClose,
-        title = { Text("مدل زبانی (Gemma 4 E2B)") },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    when (vm.modelState) {
-                        ModelState.NONE -> "وضعیت: مدل اضافه نشده"
-                        ModelState.LOADING -> "وضعیت: در حال بارگذاری..."
-                        ModelState.READY -> "وضعیت: آماده"
-                        ModelState.ERROR -> "وضعیت: خطا"
-                    },
-                    fontWeight = FontWeight.Bold
-                )
-                if (progress != null) {
-                    LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
-                    Text("در حال کپی فایل مدل: ${(progress * 100).toInt()}٪ (چند دقیقه طول می‌کشد)")
-                }
-                vm.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                Button(onClick = { launcher.launch(arrayOf("*/*")) }, enabled = progress == null) {
-                    Text("انتخاب فایل مدل (.litertlm)")
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("استفاده از GPU (سریع‌تر؛ اگر ناپایدار بود خاموش کن)", modifier = Modifier.weight(1f))
-                    Switch(checked = vm.useGpu, onCheckedChange = { vm.setGpu(it) })
-                }
-                if (vm.modelState != ModelState.NONE) {
-                    OutlinedButton(onClick = { vm.deleteModel() }, enabled = progress == null) {
-                        Text("حذف مدل از حافظهٔ اپ")
-                    }
-                }
-                Text(
-                    "فایل gemma-4-E2B-it.litertlm (حدود ۲٫۶ گیگابایت) را از huggingface.co/litert-community/gemma-4-E2B-it-litert-lm " +
-                        "دانلود کن و اینجا انتخاب کن. حداقل ۶ گیگابایت فضای خالی لازم است.",
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
-        },
-        confirmButton = { TextButton(onClick = onClose) { Text("بستن") } }
-    )
 }

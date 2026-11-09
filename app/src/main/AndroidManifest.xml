@@ -3,7 +3,9 @@
         android:name=".CrashApp"
         android:allowBackup="false"
         android:supportsRtl="true"
-        android:label="VendorChat"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:label="دستیار وندور"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
 
         <uses-native-library android:name="libvndksupport.so" android:required="false" />

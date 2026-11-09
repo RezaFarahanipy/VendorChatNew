@@ -15,7 +15,13 @@ import com.example.vendorchat.chat.Fallback
 import com.example.vendorchat.chat.Msg
 import com.example.vendorchat.chat.NameMatch
 import com.example.vendorchat.chat.Prompts
+import com.example.vendorchat.data.Backup
 import com.example.vendorchat.data.Db
+import com.example.vendorchat.data.ImportPlan
+import com.example.vendorchat.data.Importer
+import com.example.vendorchat.data.Sheet
+import com.example.vendorchat.data.VendorData
+import com.example.vendorchat.data.XlsxWriter
 import com.example.vendorchat.data.Fa
 import com.example.vendorchat.data.VendorRow
 import com.example.vendorchat.llm.LlmManager
@@ -28,6 +34,12 @@ enum class ModelState { NONE, LOADING, READY, ERROR }
 
 /** دستور منتظر تأیید کاربر. */
 data class Pending(val cmd: Cmd, val vendorId: Long?, val vendorName: String)
+
+/** کارهای گروهی منتظر تأیید (ورود از اکسل / بازیابی پشتیبان). */
+sealed class PendingTask {
+    data class Import(val plan: ImportPlan) : PendingTask()
+    data class Restore(val vendors: List<VendorData>) : PendingTask()
+}
 
 private data class ExecResult(val text: String, val vendorId: Long?)
 
@@ -52,6 +64,7 @@ class ChatViewModel(private val app: Application) : AndroidViewModel(app) {
     var useGpu by mutableStateOf(prefs.getBoolean("gpu", false))
         private set
 
+    private var task: PendingTask? = null
     private var lastVendorId: Long? = null
     private var lastVendorName: String? = null
 
@@ -199,17 +212,22 @@ class ChatViewModel(private val app: Application) : AndroidViewModel(app) {
         }
     }
 
+    private fun hasPending() = pending != null || task != null
+
     /** دکمهٔ «تأیید» روی کارت. */
     fun confirm() {
-        val p = pending ?: return
-        if (busy) return
+        if (busy || !hasPending()) return
+        val p = pending
+        val t = task
         pending = null
+        task = null
         closeAction(1)
         busy = true
         viewModelScope.launch {
             try {
-                execute(p)
+                if (t != null) runTask(t) else if (p != null) execute(p)
             } catch (e: Exception) {
+                dropTyping()
                 addText("خطا: " + (e.message ?: e.toString()))
             } finally {
                 busy = false
@@ -219,8 +237,9 @@ class ChatViewModel(private val app: Application) : AndroidViewModel(app) {
 
     /** دکمهٔ «لغو» روی کارت. */
     fun cancel() {
-        if (pending == null) return
+        if (!hasPending()) return
         pending = null
+        task = null
         closeAction(2)
         addText("باشه، لغو شد.")
     }
@@ -229,12 +248,14 @@ class ChatViewModel(private val app: Application) : AndroidViewModel(app) {
         val n = Fa.normalize(raw)
 
         // ۱) تأیید/لغو متنی
-        val p = pending
-        if (p != null) {
+        if (hasPending()) {
+            val p = pending
+            val t = task
             pending = null
+            task = null
             if (Commands.isYes(n)) {
                 closeAction(1)
-                execute(p)
+                if (t != null) runTask(t) else if (p != null) execute(p)
                 return
             }
             if (Commands.isNo(n)) {
@@ -428,6 +449,146 @@ class ChatViewModel(private val app: Application) : AndroidViewModel(app) {
             lastVendorId = null
             lastVendorName = null
         }
+    }
+
+    // ---------------- ورود از اکسل، پشتیبان‌گیری ----------------
+    private fun launchOp(block: suspend () -> Unit) {
+        if (busy) return
+        busy = true
+        viewModelScope.launch {
+            try {
+                block()
+            } catch (e: Exception) {
+                dropTyping()
+                addText("خطا: " + (e.message ?: e.toString()))
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    private fun newTaskCard(kind: String, title: String, lines: List<String>, t: PendingTask) {
+        if (hasPending()) {
+            pending = null
+            task = null
+            closeAction(2)
+        }
+        task = t
+        messages.add(Msg.Action(kind, title, lines, 0))
+    }
+
+    /** چند وندور جدید و چند وندور موجود (هم‌نام) است. */
+    private fun predict(names: List<String>): Pair<Int, Int> {
+        val known = db.names().map { Fa.normalize(it.name) }.toHashSet()
+        var created = 0
+        var updated = 0
+        for (nm in names.map { Fa.normalize(it) }.distinct()) {
+            if (nm in known) updated++ else created++
+        }
+        return created to updated
+    }
+
+    /** ادغام وندورها: هم‌نام‌ها به‌روز می‌شوند، بقیه ساخته می‌شوند. */
+    private fun merge(items: List<Pair<String, List<Pair<String, String>>>>): Pair<Int, Int> {
+        val index = HashMap<String, Long>()
+        db.names().forEach { index[Fa.normalize(it.name)] = it.id }
+        var created = 0
+        var updated = 0
+        for ((name, fields) in items) {
+            val key = Fa.normalize(name)
+            val existing = index[key]
+            val id = existing ?: db.create(name).also { index[key] = it }
+            if (existing == null) created++ else updated++
+            if (fields.isNotEmpty()) db.setFieldList(id, fields)
+        }
+        return created to updated
+    }
+
+    fun importSheet(uri: Uri) = launchOp {
+        typing()
+        val plan = withContext(Dispatchers.IO) {
+            val bytes = app.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            if (bytes == null) null else Importer.plan(Sheet.read(bytes))
+        }
+        dropTyping()
+        if (plan == null) {
+            addText("فایل خالی است یا قابل خواندن نیست. ردیف اول باید عنوان ستون‌ها باشد (مثلاً: نام، تلفن، موبایل، شهر) و از ردیف دوم هر ردیف یک وندور.")
+            return@launchOp
+        }
+        val (created, updated) = withContext(Dispatchers.IO) { predict(plan.rows.map { it.name }) }
+        val lines = ArrayList<String>()
+        lines.add("ستون‌های شناسایی‌شده: " + plan.columns.take(12).joinToString("، ") + if (plan.columns.size > 12) " ..." else "")
+        lines.add("$created وندور جدید ثبت می‌شود")
+        if (updated > 0) lines.add("$updated وندور هم‌نام موجود است؛ اطلاعاتش ادغام و به‌روز می‌شود")
+        if (plan.skipped > 0) lines.add("${plan.skipped} ردیف بدون نام نادیده گرفته شد")
+        lines.add("نمونه: " + plan.rows.take(3).joinToString("، ") { it.name })
+        newTaskCard("import", "ورود از اکسل: ${plan.rows.size} وندور", lines, PendingTask.Import(plan))
+    }
+
+    fun writeExcel(uri: Uri) = launchOp {
+        typing()
+        val n = withContext(Dispatchers.IO) {
+            val vendors = db.all()
+            val bytes = XlsxWriter.build(Backup.toTable(vendors))
+            val out = app.contentResolver.openOutputStream(uri, "wt") ?: error("نوشتن فایل ممکن نیست.")
+            out.use { it.write(bytes) }
+            vendors.size
+        }
+        dropTyping()
+        addText("✅ فایل اکسل ساخته شد ($n وندور). اطلاعات بانکی برای امنیت در اکسل نیست؛ برای آن‌ها از «پشتیبان‌گیری رمزدار» استفاده کن.")
+    }
+
+    fun writeBackup(uri: Uri, password: String) = launchOp {
+        typing()
+        val n = withContext(Dispatchers.IO) {
+            val vendors = db.all()
+            val bytes = Backup.encrypt(Backup.toJson(vendors), password.toCharArray())
+            val out = app.contentResolver.openOutputStream(uri, "wt") ?: error("نوشتن فایل ممکن نیست.")
+            out.use { it.write(bytes) }
+            vendors.size
+        }
+        dropTyping()
+        addText("✅ پشتیبان رمزدار ساخته شد ($n وندور).\nرمز را جای امنی نگه دار؛ بدون آن فایل قابل بازیابی نیست.")
+    }
+
+    fun readBackup(uri: Uri, password: String) = launchOp {
+        typing()
+        val vendors = withContext(Dispatchers.IO) {
+            val bytes = app.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            val json = if (bytes == null) null else Backup.decrypt(bytes, password.toCharArray())
+            if (json == null) null else Backup.fromJson(json)
+        }
+        dropTyping()
+        if (vendors == null) {
+            addText("❌ رمز اشتباه است یا فایل پشتیبان معتبر نیست.")
+            return@launchOp
+        }
+        val (created, updated) = withContext(Dispatchers.IO) { predict(vendors.map { it.name }) }
+        val lines = listOf(
+            "${vendors.size} وندور داخل فایل پشتیبان هست",
+            "$created وندور جدید ساخته می‌شود",
+            "$updated وندور هم‌نام ادغام و به‌روز می‌شود",
+            "چیزی از اطلاعات فعلی حذف نمی‌شود"
+        )
+        newTaskCard("restore", "بازیابی از پشتیبان", lines, PendingTask.Restore(vendors))
+    }
+
+    private suspend fun runTask(t: PendingTask) {
+        typing()
+        val text = withContext(Dispatchers.IO) {
+            when (t) {
+                is PendingTask.Import -> {
+                    val (c, u) = merge(t.plan.rows.map { it.name to it.fields })
+                    "✅ ورود از اکسل انجام شد: $c وندور جدید، $u وندور به‌روز شد."
+                }
+                is PendingTask.Restore -> {
+                    val (c, u) = merge(t.vendors.map { v -> v.name to v.attrs.map { it.key to it.value } })
+                    "✅ بازیابی انجام شد: $c وندور جدید، $u وندور به‌روز شد."
+                }
+            }
+        }
+        dropTyping()
+        addText(text)
     }
 
     private suspend fun converse(raw: String, n: String) {
