@@ -1,5 +1,10 @@
 package com.example.vendorchat.ui
 
+import android.content.Intent
+import android.speech.RecognizerIntent
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -43,6 +48,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -57,6 +63,23 @@ fun ChatScreen(vm: ChatViewModel) {
     var showSettings by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val msgs = vm.messages
+    val ctx = LocalContext.current
+    val speech = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+        val t = r.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+        if (!t.isNullOrBlank()) input = if (input.isBlank()) t else "$input $t"
+    }
+    val startVoice = {
+        val i = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "fa-IR")
+            putExtra(RecognizerIntent.EXTRA_PROMPT, "بگو چی می‌خوای...")
+        }
+        try {
+            speech.launch(i)
+        } catch (e: Exception) {
+            Toast.makeText(ctx, "تشخیص گفتار روی این گوشی در دسترس نیست", Toast.LENGTH_SHORT).show()
+        }
+    }
     val lastLen = (msgs.lastOrNull() as? Msg.Text)?.text?.length ?: 0
 
     LaunchedEffect(msgs.size, lastLen) {
@@ -95,7 +118,7 @@ fun ChatScreen(vm: ChatViewModel) {
                             )
                         }
                     }
-                    is Msg.Chips -> NameChips(m.title, m.names) { vm.send("اطلاعات «$it»") }
+                    is Msg.Chips -> NameChips(m.title, m.names) { vm.onChip(it) }
                     is Msg.Action -> ActionCard(
                         m, enabled = !vm.busy,
                         onConfirm = { vm.confirm() }, onCancel = { vm.cancel() }
@@ -108,6 +131,7 @@ fun ChatScreen(vm: ChatViewModel) {
             value = input,
             onChange = { input = it },
             busy = vm.busy,
+            onMic = { startVoice() },
             onSend = {
                 vm.send(input)
                 input = ""
@@ -284,7 +308,7 @@ private fun SuggestionRow(icon: ImageVector, tint: Color, title: String, subtitl
 }
 
 @Composable
-private fun InputBar(value: String, onChange: (String) -> Unit, busy: Boolean, onSend: () -> Unit) {
+private fun InputBar(value: String, onChange: (String) -> Unit, busy: Boolean, onMic: () -> Unit, onSend: () -> Unit) {
     val canSend = !busy && value.isNotBlank()
     Row(
         Modifier.fillMaxWidth()
@@ -311,6 +335,9 @@ private fun InputBar(value: String, onChange: (String) -> Unit, busy: Boolean, o
             ),
             modifier = Modifier.weight(1f)
         )
+        IconButton(onClick = onMic, enabled = !busy) {
+            Icon(Ic.Mic, contentDescription = "ورودی صوتی", tint = MaterialTheme.colorScheme.primary)
+        }
         Box(
             Modifier.size(52.dp).clip(CircleShape)
                 .background(

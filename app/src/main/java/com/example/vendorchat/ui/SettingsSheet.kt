@@ -1,5 +1,8 @@
 package com.example.vendorchat.ui
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -25,6 +28,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -48,10 +52,22 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import android.widget.Toast
+import com.example.vendorchat.AppLock
 import com.example.vendorchat.ChatViewModel
+import com.example.vendorchat.chat.Tone
 import com.example.vendorchat.ModelState
 
 private const val XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+private fun Context.findActivity(): Activity? {
+    var c: Context? = this
+    while (c is ContextWrapper) {
+        if (c is Activity) return c
+        c = c.baseContext
+    }
+    return null
+}
+
 private const val DEV_NAME = "رضا فراهانی"
 private const val DEV_EMAIL = "Rezafarahani2008@gmail.com"
 
@@ -91,6 +107,13 @@ fun SettingsSheet(vm: ChatViewModel, onClose: () -> Unit) {
         if (uri != null) restoreUri = uri
     }
     var askBackupPass by remember { mutableStateOf(false) }
+    val templateSaver = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(XLSX_MIME)) { uri ->
+        if (uri != null) {
+            vm.writeTemplate(uri)
+            onClose()
+        }
+    }
+    var lockOn by remember { mutableStateOf(AppLock.enabled(ctx)) }
 
     val version = remember {
         try {
@@ -165,13 +188,76 @@ fun SettingsSheet(vm: ChatViewModel, onClose: () -> Unit) {
                 }
             }
 
+            // ---------- لحن ----------
+            SectionTitle("لحن گفتگو")
+            SheetCard {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Tone.names.forEachIndexed { i, nm ->
+                            FilterChip(selected = vm.tone == i, onClick = { vm.setTone(i) }, label = { Text(nm) })
+                        }
+                    }
+                    Box(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                            .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)).padding(12.dp)
+                    ) { Text("«" + Tone.sample(vm.tone) + "»", style = MaterialTheme.typography.bodyMedium) }
+                    Text(
+                        "لحن روی نحوهٔ حرف زدن هوش مصنوعی اثر می‌گذارد. «خودمونی» محاوره‌ای و صمیمی است.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            // ---------- امنیت ----------
+            SectionTitle("امنیت")
+            SheetCard {
+                Row(
+                    Modifier.fillMaxWidth().padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    IconChip(Ic.Fingerprint, Color(0xFFDB2777), box = 42.dp, glyph = 22.dp)
+                    Column(Modifier.weight(1f)) {
+                        Text("قفل برنامه", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "با اثر انگشت یا پین/الگوی گوشی؛ هر بار که برنامه را باز می‌کنی",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(checked = lockOn, onCheckedChange = { want ->
+                        val act = ctx.findActivity()
+                        if (act != null) {
+                            if (want && !AppLock.available(ctx)) {
+                                Toast.makeText(ctx, "اول در تنظیمات گوشی یک پین، الگو یا اثر انگشت بگذار.", Toast.LENGTH_LONG).show()
+                            } else {
+                                AppLock.prompt(
+                                    act, if (want) "تأیید برای فعال‌سازی قفل" else "تأیید برای غیرفعال‌سازی قفل",
+                                    onOk = {
+                                        AppLock.setEnabled(ctx, want)
+                                        lockOn = want
+                                    },
+                                    onFail = { Toast.makeText(ctx, "تأیید هویت انجام نشد", Toast.LENGTH_SHORT).show() }
+                                )
+                            }
+                        }
+                    })
+                }
+            }
+
             // ---------- داده‌ها ----------
             SectionTitle("داده‌ها")
             SheetCard {
                 Column {
                     ToolRow(
+                        Ic.TableView, Color(0xFF3B5BDB), "دریافت قالب اکسل",
+                        "فایل آمادهٔ xlsx با ستون‌ها، دو ردیف نمونه و برگهٔ راهنما"
+                    ) { templateSaver.launch("VendorChat-template.xlsx") }
+                    RowDivider()
+                    ToolRow(
                         Ic.UploadFile, Color(0xFF16A34A), "ورود از اکسل یا CSV",
-                        "ردیف اول عنوان ستون‌ها (نام، تلفن، موبایل، شهر ...)، هر ردیف یک وندور"
+                        "فایلی که با قالب (یا هر جدولی با عنوان ستون) پر کرده‌ای؛ هر ردیف یک وندور"
                     ) { importPicker.launch(arrayOf("*/*")) }
                     RowDivider()
                     ToolRow(

@@ -58,7 +58,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.vendorchat.chat.Msg
-import com.example.vendorchat.data.Attr
+import com.example.vendorchat.data.AddressData
 import com.example.vendorchat.data.VendorData
 
 private val order = listOf(
@@ -131,18 +131,100 @@ fun Avatar(letter: String, size: Dp, brush: Brush = Pal.BrandDiag, fontSize: Tex
     }
 }
 
+private fun shareText(v: VendorData): String = buildString {
+    appendLine("🏢 ${v.name}")
+    val g = LinkedHashMap<String, MutableList<String>>()
+    v.attrs.filter { !it.secret }.forEach {
+        g.getOrPut(it.key) { mutableListOf() }.add(if (it.label.isNullOrEmpty()) it.value else "${it.value} (${it.label})")
+    }
+    g.forEach { (k, vals) -> appendLine("$k: ${vals.joinToString("، ")}") }
+    v.addresses.forEach { a ->
+        append("📍 آدرس ${a.kind}: " + listOfNotNull(a.province, a.city, a.street).joinToString("، "))
+        a.postal?.let { append(" | کد پستی $it") }
+        appendLine()
+        if (a.lat != null && a.lng != null) appendLine("   نقشه: https://maps.google.com/?q=${a.lat},${a.lng}")
+    }
+    v.people.forEach { p ->
+        appendLine("👤 ${p.name}" + listOfNotNull(p.role, p.mobile, p.phone, p.email).let { if (it.isEmpty()) "" else " — " + it.joinToString(" • ") })
+    }
+}.trim()
+
+private fun shareVendor(ctx: Context, v: VendorData) {
+    val i = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_TEXT, shareText(v))
+    }
+    try {
+        ctx.startActivity(Intent.createChooser(i, "ارسال اطلاعات وندور"))
+    } catch (e: Exception) {
+        copyText(ctx, shareText(v))
+    }
+}
+
+private fun openMap(ctx: Context, a: AddressData, name: String) {
+    val uri = if (a.lat != null && a.lng != null) {
+        Uri.parse("geo:${a.lat},${a.lng}?q=${a.lat},${a.lng}(${Uri.encode(name)})")
+    } else {
+        Uri.parse("geo:0,0?q=" + Uri.encode(listOfNotNull(a.province, a.city, a.street).joinToString(" ")))
+    }
+    try {
+        ctx.startActivity(Intent(Intent.ACTION_VIEW, uri))
+    } catch (e: Exception) {
+        try {
+            val q = if (a.lat != null && a.lng != null) "${a.lat},${a.lng}" else Uri.encode(listOfNotNull(a.city, a.street).joinToString(" "))
+            ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/maps/search/?api=1&query=$q")))
+        } catch (e2: Exception) {
+            Toast.makeText(ctx, "برنامهٔ نقشه پیدا نشد", Toast.LENGTH_SHORT).show()
+        }
+    }
+}
+
+@Composable
+private fun SectionLabel(icon: ImageVector, tint: Color, text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        GlyphIcon(icon, tint, 18.dp)
+        Text(text, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium, color = tint)
+    }
+}
+
+/** یک سطر اطلاعات با آیکن، عنوان کوچک، مقدار و دکمهٔ کپی */
+@Composable
+private fun InfoLine(
+    icon: ImageVector, tint: Color, title: String, value: String,
+    visible: Boolean = true, onOpen: (() -> Unit)? = null, onCopy: (() -> Unit)? = null
+) {
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        IconChip(icon, tint)
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodySmall, color = muted)
+            Text(
+                if (visible) value else "•••• •••• ••••",
+                modifier = Modifier.clickable(enabled = visible && onOpen != null) { onOpen?.invoke() }.padding(vertical = 2.dp),
+                style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium
+            )
+        }
+        if (visible && onCopy != null) {
+            Box(Modifier.clip(CircleShape).clickable { onCopy() }.padding(8.dp)) { GlyphIcon(Ic.ContentCopy, muted, 16.dp) }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun VendorCard(v: VendorData, onEdit: () -> Unit, onDelete: () -> Unit) {
     val ctx = LocalContext.current
     var reveal by remember { mutableStateOf(false) }
-    val groups = remember(v) {
-        val m = LinkedHashMap<String, MutableList<Attr>>()
-        v.attrs.forEach { m.getOrPut(it.key) { mutableListOf() }.add(it) }
-        val keys = m.keys.sortedBy { k -> order.indexOf(k).let { i -> if (i < 0) 999 else i } }
-        keys.map { it to m.getValue(it) }
-    }
-    val hasSecret = v.attrs.any { it.secret }
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    val primary = MaterialTheme.colorScheme.primary
+
+    fun vals(key: String) = v.attrs.filter { it.key == key && !it.secret }
+    val activity = vals("نوع فعالیت").map { it.value }
+    val tags = vals("دسته‌بندی").map { it.value }
+    val fixedKeys = setOf("نوع فعالیت", "دسته‌بندی", "تلفن", "موبایل", "ایمیل", "وبسایت", "شناسه ملی", "شماره ثبت", "کد اقتصادی", "کالا", "توضیحات")
+    val others = v.attrs.filter { it.key !in fixedKeys }
+    val hasBankSecret = v.banks.any { it.account != null || it.sheba != null || it.holder != null } || v.attrs.any { it.secret }
+    val total = v.attrs.size + v.addresses.size + v.people.size + v.banks.size
 
     Card(
         shape = RoundedCornerShape(24.dp),
@@ -159,58 +241,160 @@ fun VendorCard(v: VendorData, onEdit: () -> Unit, onDelete: () -> Unit) {
                     Text(v.name.trim().take(1), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 22.sp)
                 }
                 Column(Modifier.weight(1f)) {
+                    Text(v.name, color = Color.White, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text(
-                        v.name, color = Color.White,
-                        style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        "${v.attrs.size} مورد اطلاعات", color = Color(0xCCFFFFFF),
-                        style = MaterialTheme.typography.bodySmall
+                        if (activity.isNotEmpty()) activity.joinToString(" • ") else "$total مورد اطلاعات",
+                        color = Color(0xCCFFFFFF), style = MaterialTheme.typography.bodySmall
                     )
                 }
                 Icon(Ic.Storefront, contentDescription = null, tint = Color(0x66FFFFFF), modifier = Modifier.size(34.dp))
             }
         }
+
         Column(
             Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            if (groups.isEmpty()) {
-                Text(
-                    "هنوز اطلاعاتی ثبت نشده. مثلاً بگو «شماره‌اش ... است».",
-                    color = muted, style = MaterialTheme.typography.bodyMedium
-                )
+            if (total == 0) {
+                Text("هنوز اطلاعاتی ثبت نشده. مثلاً بگو «تلفنش ... است».", color = muted, style = MaterialTheme.typography.bodyMedium)
             }
-            groups.forEach { (k, list) ->
-                val (icon, tint) = iconFor(k)
-                Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    IconChip(icon, tint)
-                    Column(Modifier.weight(1f)) {
-                        Text(k, style = MaterialTheme.typography.bodySmall, color = muted)
-                        list.forEach { a ->
-                            val visible = !a.secret || reveal
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    if (visible) a.value else "•••• •••• ••••",
-                                    modifier = Modifier.weight(1f)
-                                        .clickable(enabled = visible) { openValue(ctx, k, a.value) }
-                                        .padding(vertical = 3.dp),
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                if (visible) {
-                                    Box(
-                                        Modifier.clip(CircleShape).clickable { copyText(ctx, a.value) }.padding(8.dp)
-                                    ) { GlyphIcon(Ic.ContentCopy, muted, 16.dp) }
-                                }
+            if (tags.isNotEmpty()) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    tags.forEach { t ->
+                        Box(
+                            Modifier.clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.primaryContainer)
+                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                        ) { Text("#$t", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimaryContainer) }
+                    }
+                }
+            }
+
+            // تماس
+            vals("تلفن").forEach { a ->
+                InfoLine(Ic.Call, Color(0xFF16A34A), if (a.label.isNullOrEmpty()) "تلفن" else "تلفن • ${a.label}", a.value,
+                    onOpen = { openValue(ctx, "تلفن", a.value) }, onCopy = { copyText(ctx, a.value) })
+            }
+            vals("موبایل").forEach { a ->
+                InfoLine(Ic.Smartphone, Color(0xFF0D9488), if (a.label.isNullOrEmpty()) "موبایل" else "موبایل • ${a.label}", a.value,
+                    onOpen = { openValue(ctx, "موبایل", a.value) }, onCopy = { copyText(ctx, a.value) })
+            }
+            vals("ایمیل").forEach { a ->
+                InfoLine(Ic.Mail, Color(0xFF2563EB), if (a.label.isNullOrEmpty()) "ایمیل" else "ایمیل • ${a.label}", a.value,
+                    onOpen = { openValue(ctx, "ایمیل", a.value) }, onCopy = { copyText(ctx, a.value) })
+            }
+            vals("وبسایت").forEach { a ->
+                InfoLine(Ic.Language, Color(0xFF0891B2), "وبسایت", a.value,
+                    onOpen = { openValue(ctx, "وبسایت", a.value) }, onCopy = { copyText(ctx, a.value) })
+            }
+
+            // مشخصات ثبتی
+            listOf("شناسه ملی" to Ic.Badge, "شماره ثبت" to Ic.ReceiptLong, "کد اقتصادی" to Ic.Sell).forEach { (k, ic) ->
+                vals(k).forEach { a ->
+                    InfoLine(ic, Color(0xFF4F46E5), k, a.value, onCopy = { copyText(ctx, a.value) })
+                }
+            }
+            val goods = vals("کالا").map { it.value }
+            if (goods.isNotEmpty()) {
+                InfoLine(Ic.Inventory2, Color(0xFFD97706), "کالا و خدمات", goods.joinToString("، "), onCopy = { copyText(ctx, goods.joinToString("، ")) })
+            }
+
+            // آدرس‌ها
+            if (v.addresses.isNotEmpty()) {
+                SectionLabel(Ic.LocationOn, Color(0xFFEA580C), "آدرس‌ها")
+                v.addresses.forEach { a ->
+                    val place = listOfNotNull(a.province, a.city, a.street).joinToString("، ")
+                    Column(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)).padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                Modifier.clip(RoundedCornerShape(50)).background(Color(0xFFEA580C).copy(alpha = 0.15f))
+                                    .padding(horizontal = 10.dp, vertical = 3.dp)
+                            ) { Text(a.kind, style = MaterialTheme.typography.labelMedium, color = Color(0xFFEA580C), fontWeight = FontWeight.Bold) }
+                            Spacer(Modifier.weight(1f))
+                            if (a.lat != null && a.lng != null) {
+                                Text("موقعیت ثبت شده", style = MaterialTheme.typography.labelSmall, color = Pal.Ok)
+                            }
+                        }
+                        if (place.isNotEmpty()) Text(place, style = MaterialTheme.typography.bodyLarge)
+                        a.postal?.let { Text("کد پستی: $it", style = MaterialTheme.typography.bodySmall, color = muted) }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = { openMap(ctx, a, v.name) }, shape = RoundedCornerShape(12.dp)) {
+                                GlyphIcon(Ic.Directions, primary, 18.dp)
+                                Spacer(Modifier.width(6.dp))
+                                Text("نقشه")
+                            }
+                            OutlinedButton(onClick = { copyText(ctx, place) }, shape = RoundedCornerShape(12.dp)) {
+                                GlyphIcon(Ic.ContentCopy, primary, 16.dp)
+                                Spacer(Modifier.width(6.dp))
+                                Text("کپی")
                             }
                         }
                     }
                 }
             }
-            if (hasSecret) {
+
+            // پرسنل
+            if (v.people.isNotEmpty()) {
+                SectionLabel(Ic.Groups, Color(0xFF7C3AED), "پرسنل")
+                v.people.forEach { p ->
+                    Column(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)).padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Avatar(p.name.trim().take(1), 36.dp, brush = Pal.avatar(p.name), fontSize = 16.sp)
+                            Column {
+                                Text(p.name, fontWeight = FontWeight.Bold)
+                                p.role?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = muted) }
+                            }
+                        }
+                        p.mobile?.let { m ->
+                            InfoLine(Ic.Smartphone, Color(0xFF0D9488), "موبایل", m, onOpen = { openValue(ctx, "موبایل", m) }, onCopy = { copyText(ctx, m) })
+                        }
+                        p.phone?.let { m ->
+                            InfoLine(Ic.Call, Color(0xFF16A34A), "تلفن", m, onOpen = { openValue(ctx, "تلفن", m) }, onCopy = { copyText(ctx, m) })
+                        }
+                        p.email?.let { m ->
+                            InfoLine(Ic.Mail, Color(0xFF2563EB), "ایمیل", m, onOpen = { openValue(ctx, "ایمیل", m) }, onCopy = { copyText(ctx, m) })
+                        }
+                        p.note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = muted) }
+                    }
+                }
+            }
+
+            // حساب بانکی
+            if (v.banks.isNotEmpty()) {
+                SectionLabel(Ic.AccountBalance, Color(0xFF0F766E), "حساب‌های بانکی")
+                v.banks.forEach { b ->
+                    Column(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)).padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            listOfNotNull(b.bank, b.branch?.let { "شعبه $it" }).joinToString(" • ").ifEmpty { "حساب" },
+                            fontWeight = FontWeight.Bold
+                        )
+                        b.holder?.let { InfoLine(Ic.Person, Color(0xFF0F766E), "صاحب حساب", it, visible = reveal, onCopy = { copyText(ctx, it) }) }
+                        b.account?.let { InfoLine(Ic.CreditCard, Color(0xFF0F766E), "شماره حساب", it, visible = reveal, onCopy = { copyText(ctx, it) }) }
+                        b.sheba?.let { InfoLine(Ic.CreditCard, Color(0xFF0F766E), "شبا", it, visible = reveal, onCopy = { copyText(ctx, it) }) }
+                    }
+                }
+            }
+
+            // توضیحات و مشخصه‌های دلخواه
+            vals("توضیحات").forEach { a -> InfoLine(Ic.Notes, Color(0xFF64748B), "توضیحات", a.value, onCopy = { copyText(ctx, a.value) }) }
+            others.forEach { a ->
+                InfoLine(Ic.Info, primary, a.key, a.value, visible = !a.secret || reveal, onCopy = { copyText(ctx, a.value) })
+            }
+
+            if (hasBankSecret) {
                 TextButton(onClick = { reveal = !reveal }) {
-                    GlyphIcon(if (reveal) Ic.VisibilityOff else Ic.Visibility, MaterialTheme.colorScheme.primary, 18.dp)
+                    GlyphIcon(if (reveal) Ic.VisibilityOff else Ic.Visibility, primary, 18.dp)
                     Spacer(Modifier.width(6.dp))
                     Text(if (reveal) "پنهان کردن اطلاعات بانکی" else "نمایش اطلاعات بانکی")
                 }
@@ -222,14 +406,16 @@ fun VendorCard(v: VendorData, onEdit: () -> Unit, onDelete: () -> Unit) {
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             TextButton(onClick = onEdit) {
-                GlyphIcon(Ic.Edit, MaterialTheme.colorScheme.primary, 18.dp)
+                GlyphIcon(Ic.Edit, primary, 18.dp)
                 Spacer(Modifier.width(6.dp))
                 Text("ویرایش")
             }
-            TextButton(
-                onClick = onDelete,
-                colors = ButtonDefaults.textButtonColors(contentColor = Pal.Danger)
-            ) {
+            TextButton(onClick = { shareVendor(ctx, v) }) {
+                GlyphIcon(Ic.Share, primary, 18.dp)
+                Spacer(Modifier.width(6.dp))
+                Text("ارسال")
+            }
+            TextButton(onClick = onDelete, colors = ButtonDefaults.textButtonColors(contentColor = Pal.Danger)) {
                 GlyphIcon(Ic.Delete, Pal.Danger, 18.dp)
                 Spacer(Modifier.width(6.dp))
                 Text("حذف")

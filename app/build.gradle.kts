@@ -12,8 +12,8 @@ android {
         minSdk = 31
         ndk { abiFilters += "arm64-v8a" }
         targetSdk = 35
-        versionCode = 3
-        versionName = "3.0"
+        versionCode = 5
+        versionName = "5.0"
     }
     buildFeatures { compose = true }
     compileOptions {
