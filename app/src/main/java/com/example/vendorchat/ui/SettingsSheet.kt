@@ -194,7 +194,7 @@ fun SettingsSheet(vm: ChatViewModel, onClose: () -> Unit) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Tone.names.forEachIndexed { i, nm ->
-                            FilterChip(selected = vm.tone == i, onClick = { vm.setTone(i) }, label = { Text(nm) })
+                            FilterChip(selected = vm.tone == i, onClick = { vm.changeTone(i) }, label = { Text(nm) })
                         }
                     }
                     Box(

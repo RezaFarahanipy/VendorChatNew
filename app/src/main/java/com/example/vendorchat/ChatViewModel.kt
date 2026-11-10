@@ -89,7 +89,7 @@ class ChatViewModel(private val app: Application) : AndroidViewModel(app) {
         if (note != null) error = note
     }
 
-    fun setTone(t: Int) {
+    fun changeTone(t: Int) {
         tone = Tone.clamp(t)
         prefs.edit().putInt("tone", tone).apply()
     }
